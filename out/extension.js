@@ -36,6 +36,14 @@ exports.activate = void 0;
 const child_process_1 = require("child_process");
 const vscode = __importStar(require("vscode"));
 function activate(context) {
+    // register command for showing references, used by CodeLens
+    context.subscriptions.push(vscode.commands.registerCommand("pymetrics.showReferences", (uri, position) => __awaiter(this, void 0, void 0, function* () {
+        const locations = yield vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position);
+        if (!locations) {
+            return;
+        }
+        vscode.commands.executeCommand("editor.action.showReferences", uri, position, locations);
+    })));
     const provider = new MetricsCodeLensProvider();
     context.subscriptions.push(vscode.languages.registerCodeLensProvider({ language: "python" }, provider));
 }
@@ -62,34 +70,67 @@ function analyzeFile(file) {
         });
     });
 }
+function countReferences(document, position) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const references = yield vscode.commands.executeCommand("vscode.executeReferenceProvider", document.uri, position);
+        if (!references) {
+            return 0;
+        }
+        if (references.length === 0) {
+            return 0;
+        }
+        return references.length - 1; // subtract 1 to exclude the declaration itself
+    });
+}
 class MetricsCodeLensProvider {
     // updated signature with cancellation token
     provideCodeLenses(document, token) {
         return __awaiter(this, void 0, void 0, function* () {
             const lenses = [];
-            const results = yield analyzeFile(document.fileName);
-            results.forEach((result) => {
+            let results = [];
+            try {
+                results = yield analyzeFile(document.fileName);
+            }
+            catch (err) {
+                console.error("analyzeFile failed", err);
+                return lenses;
+            }
+            // use for..of so we can await inside the loop
+            for (const result of results) {
                 const line = result.line - 1; // adjust for 0-based index
+                // attempt to find the column where the function name starts so the
+                // reference provider is invoked at the correct position
+                const textLine = document.lineAt(line).text;
+                let nameColumn = 0;
+                const m = /^\s*def\s+(\w+)/.exec(textLine);
+                if (m && m.index !== undefined) {
+                    // m.index gives start of match (including indentation); add length of 'def ' to get to name
+                    nameColumn = m.index + m[0].indexOf(m[1]);
+                }
                 const range = new vscode.Range(line, 0, line, 0);
                 const complexity = result.complexity;
                 let interpretation;
                 if (complexity <= 5) {
-                    interpretation = "simple";
+                    interpretation = "simple ✓";
                 }
                 else if (complexity <= 10) {
-                    interpretation = "moderate";
+                    interpretation = "moderate ⚠";
                 }
                 else if (complexity <= 20) {
-                    interpretation = "complex";
+                    interpretation = "complex ✗";
                 }
                 else {
-                    interpretation = "very complex";
+                    interpretation = "very complex ✗";
                 }
+                const position = new vscode.Position(line, nameColumn);
+                const referenceCount = yield countReferences(document, position);
+                const title = `Complexity: ${complexity} (that is a ${interpretation} function); refs: ${referenceCount}`;
                 lenses.push(new vscode.CodeLens(range, {
-                    title: `Complexity: ${complexity} (that is a ${interpretation} function)`,
-                    command: ""
+                    title,
+                    command: "pymetrics.showReferences",
+                    arguments: [document.uri, position]
                 }));
-            });
+            }
             return lenses;
         });
     }
