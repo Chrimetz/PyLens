@@ -1,0 +1,82 @@
+import { execFile } from "child_process";
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+    const provider: vscode.CodeLensProvider<vscode.CodeLens> = new MetricsCodeLensProvider();
+
+    context.subscriptions.push(
+        vscode.languages.registerCodeLensProvider({ language: "python" }, provider)
+    );
+}
+
+import * as path from 'path';
+
+function analyzeFile(file: string): Promise<any> {
+    const analyzerScript = path.join(__dirname, '..', 'src', 'analyzer', 'analyzer.py');
+
+    return new Promise((resolve, reject) => {
+        execFile(
+            "python",
+            [analyzerScript, file],
+            { cwd: path.dirname(analyzerScript) },
+            (err, stdout, stderr) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                // ignore stderr; radon script should not write to stdout
+
+                try {
+                    const idx = stdout.search(/[\[{]/);
+                    const jsonText = idx >= 0 ? stdout.slice(idx) : stdout;
+                    const parsed = JSON.parse(jsonText);
+                    resolve(parsed);
+                } catch (parseErr) {
+                    reject(parseErr);
+                }
+            }
+        );
+    });
+}
+
+class MetricsCodeLensProvider<T extends vscode.CodeLens = vscode.CodeLens> implements vscode.CodeLensProvider<T> {
+
+    // updated signature with cancellation token
+    async provideCodeLenses(
+        document: vscode.TextDocument,
+        token: vscode.CancellationToken
+    ): Promise<T[]> {
+
+        const lenses: T[] = [];
+
+        const results = await analyzeFile(document.fileName);
+
+        results.forEach((result: any) => {
+            const line = result.line - 1; // adjust for 0-based index
+            const range = new vscode.Range(line, 0, line, 0);
+            const complexity = result.complexity;
+            let interpretation: string;
+            if (complexity <= 5) {
+                interpretation = "simple";
+            } else if (complexity <= 10) {
+                interpretation = "moderate";
+            } else if (complexity <= 20) {
+                interpretation = "complex";
+            } else {
+                interpretation = "very complex";
+            }
+
+            lenses.push(
+                new vscode.CodeLens(range, {
+                    title: `Complexity: ${complexity} (that is a ${interpretation} function)`,
+                    command: ""
+                }) as T
+            );
+        });
+
+        return lenses;
+    }
+}
+
+
