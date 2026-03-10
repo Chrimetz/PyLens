@@ -1,7 +1,11 @@
 {
-    "name": "PyLens",
+    "name": "pyinsights",
     "version": "0.0.1",
-    "publisher": "chris",
+    "publisher": "Anubis",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Chrimetz/PyLens.git"
+    },
     "engines": {
         "vscode": "^1.74.0"
     },
@@ -13,7 +17,9 @@
         "languages": [
             {
                 "id": "python",
-                "extension": [".py"]
+                "extension": [
+                    ".py"
+                ]
             }
         ]
     },
@@ -24,8 +30,9 @@
         "postinstall": "python -m pip install -e src/analyzer || echo \"python dependencies could not be installed\""
     },
     "devDependencies": {
-        "typescript": "^4.9.5",
         "@types/node": "^14.18.0",
-        "@types/vscode": "^1.74.0"
+        "@types/vscode": "^1.74.0",
+        "typescript": "^4.9.5",
+        "vsce": "^2.15.0"
     }
 }
